@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 import polars as pl
 import polars.selectors as cs
  
-from tokenize import tokenize # type: ignore
+from tokenizer import tokenize # type: ignore
 from chunking import yield_chunks
 from utils import calculate_abspos
  

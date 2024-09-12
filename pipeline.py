@@ -5,7 +5,7 @@ from typing import List
 from pathlib import Path
 import polars as pl
  
-from tokenize import create_vocab # type: ignore
+from tokenizer import create_vocab # type: ignore
 from utils import get_pnrs
 from features import (
     add_cls_token,
@@ -125,12 +125,12 @@ class DataPipeline:
             birthdates.write_parquet(birthdate_path)
         return background.lazy()
  
-    def get_lazy_background(self, background: pl.DataFrame) -> pl.LazyFrame:
+    def get_lazy_background(self, background_df: pl.DataFrame) -> pl.LazyFrame:
         """Load or create the background with all columns - ('person_id', 'birthday')"""
         background_path = self.dir_path / "background.parquet"
  
         if (background := self._load_if_exists(background_path)) is None:
-            background = create_background(background)
+            background = create_background(background_df)
             background.write_parquet(background_path)
         return background.lazy()
  
