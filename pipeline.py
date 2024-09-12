@@ -84,11 +84,14 @@ class DataPipeline:
         return features_lf
  
     @staticmethod
-    def _load_if_exists(path: Path):
+    def _load_if_exists(path: Path, lazy=True):
         if path.exists():
             print("Loading", path.stem)
             if path.suffix == ".parquet":
-                return pl.scan_parquet(path)
+                if lazy:
+                    return pl.scan_parquet(path)
+                else:
+                    return pl.read_parquet(path)
             elif path.suffix == ".json":
                 with open(path, "r", encoding="utf-8") as f:
                     return json.load(f)
@@ -108,7 +111,7 @@ class DataPipeline:
  
         # Load or subset background
         if (
-            background_subsetted := self._load_if_exists(background_subsetted_path)
+            background_subsetted := self._load_if_exists(background_subsetted_path, lazy=False)
         ) is None:
             pnrs = get_pnrs(sources)
             background_subsetted = background.join(pnrs, on="person_id", how="inner")
@@ -123,7 +126,7 @@ class DataPipeline:
         if (birthdates := self._load_if_exists(birthdate_path)) is None:
             birthdates = background.select("person_id", "birthday")
             birthdates.write_parquet(birthdate_path)
-        return background.lazy()
+        return birthdates.lazy()
  
     def get_lazy_background(self, background_df: pl.DataFrame) -> pl.LazyFrame:
         """Load or create the background with all columns - ('person_id', 'birthday')"""
