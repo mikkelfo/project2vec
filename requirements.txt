@@ -1,2 +1,2 @@
-polars==1.2.1
+polars==1.7.1
 pyarrow==17.0.0

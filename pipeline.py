@@ -4,16 +4,12 @@ import json
 from typing import List
 from pathlib import Path
 import polars as pl
+import pyarrow.dataset as ds
  
-from tokenizer import create_vocab # type: ignore
+from tokenizer import create_vocab
 from utils import get_pnrs
 from features import (
-    add_cls_token,
-    add_sep_tokens,
-    create_background,
-    create_abspos,
-    create_age,
-    create_segment,
+    create_cls_source,
     create_tokenized_events,
 )
  
@@ -23,75 +19,66 @@ class DataPipeline:
  
     def __init__(
         self,
-        background: pl.DataFrame,
         cls_token: bool,
         sep_token: bool,
         segment: bool,
+        fill_nulls: bool = False,
+        subset_background: bool = False,
     ):
         self.cls_token = cls_token
         self.sep_token = sep_token
         self.segment = segment
-        assert {"person_id", "birthday"}.issubset(
-            background.columns
-        ), "Required cols: person_id, birthday"
-        self.background = background
+        self.fill_nulls = fill_nulls
+        self.subset_background = subset_background
  
         # Assigned during __call__
         self.dir_path = None
+        self.vocab = None
  
-    def __call__(self, sources: List[pl.LazyFrame], dir_path: Path = None):
+    def __call__(
+        self, sources: List[ds.Dataset], background: pl.DataFrame, dir_path: Path = None
+    ):
         """Does all data processing required to create features"""
+        assert {"person_id", "date_col"}.issubset(
+            background.columns
+        ), "Required cols: person_id, date_col"
         self.dir_path = dir_path
  
-        # Subset background to sources
-        background_subset = self.get_background_subset(sources, self.background)
+        # Subset background on sources
+        if self.subset_background:
+            background = self.get_background_subset(sources, background)
+        birthdates = background.select("person_id", birthday="date_col")
  
-        # Get birthdates
-        birthdates = self.get_lazy_birthdates(background_subset)
+        # Prepend background to sources
+        if len(background.columns) > 2:
+            sources = [ds.dataset(background.to_arrow())] + sources
  
-        # Get background and prepend to sources
-        if not (set(background_subset.columns) == {"person_id", "birthday"}):
-            background = self.get_lazy_background(background_subset)
-            sources = [background] + sources
+        # Get cls_token dataframe and prepend to sources
+        if self.cls_token:
+            cls_source = create_cls_source(birthdates.rename({"birthday": "date_col"}))
+            sources = [ds.dataset(cls_source.to_arrow())] + sources
  
         # Get vocab if not computed
-        vocab = self.get_vocab(sources)
+        self.vocab = self.get_vocab(sources)
  
-        # Get tokenized event LataFrame
-        tokenized_event_lf = self.get_lazy_tokenized_event_lf(sources, vocab)
+        # Get tokenized event Dataset
+        tokenized_event = self.get_tokenized_event(sources, self.vocab, birthdates)
  
-        if self.cls_token:
-            tokenized_event_lf = add_cls_token(
-                lf=tokenized_event_lf,
-                birthdates=birthdates,
-                cls_token=vocab["[CLS]"],
-            )
- 
-        if self.sep_token:
-            tokenized_event_lf = add_sep_tokens(
-                lf=tokenized_event_lf, sep_token=vocab["[SEP]"]
-            )
- 
-        # Always create features DataFrame with age and abspos
-        features_lf = tokenized_event_lf
-        features_lf = create_abspos(features_lf)
-        features_lf = create_age(lf=features_lf, birthdates=birthdates)
-        if self.segment:
-            features_lf = create_segment(features_lf)
-        features_lf = features_lf.sort("date_col", maintain_order=True)
-        features_lf = features_lf.drop(["date_col"])
- 
-        return features_lf
+        return tokenized_event
  
     @staticmethod
-    def _load_if_exists(path: Path, lazy=True):
+    def _load_if_exists(path: Path, backend=None):
         if path.exists():
             print("Loading", path.stem)
             if path.suffix == ".parquet":
-                if lazy:
-                    return pl.scan_parquet(path)
-                else:
+                if backend == "arrow":
+                    return ds.dataset(path, format="parquet")
+                elif backend == "polars":
                     return pl.read_parquet(path)
+                else:
+                    raise ValueError(
+                        "Only 'arrow' or 'polars' backend supported", backend
+                    )
             elif path.suffix == ".json":
                 with open(path, "r", encoding="utf-8") as f:
                     return json.load(f)
@@ -102,42 +89,25 @@ class DataPipeline:
             return None
  
     def get_background_subset(
-        self, sources: List[pl.LazyFrame], background: pl.DataFrame
+        self, sources: List[ds.Dataset], background_df: pl.DataFrame
     ) -> pl.DataFrame:
         """Load or subset background with pnrs of sources"""
-        background_subsetted_path = (
-            self.dir_path / "background_sample_inner_join.parquet"
-        )
+        background_subset_path = self.dir_path / "background_subset.parquet"
  
         # Load or subset background
         if (
-            background_subsetted := self._load_if_exists(background_subsetted_path, lazy=False)
+            background_subset := self._load_if_exists(
+                background_subset_path, backend="polars"
+            )
         ) is None:
-            pnrs = get_pnrs(sources)
-            background_subsetted = background.join(pnrs, on="person_id", how="inner")
-            background_subsetted.write_parquet(background_subsetted_path)
-        return background_subsetted
+            sources_pnrs = get_pnrs(sources)
+            background_subset = background_df.join(
+                pl.DataFrame({"person_id": sources_pnrs.tolist()}), on="person_id"
+            )
+            background_subset.write_parquet(background_subset_path)
+        return background_subset
  
-    def get_lazy_birthdates(self, background: pl.DataFrame) -> pl.LazyFrame:
-        """Load or create the birthdates lazyframe"""
-        birthdate_path = self.dir_path / "birthdates.parquet"
- 
-        # Load or create birthdates
-        if (birthdates := self._load_if_exists(birthdate_path)) is None:
-            birthdates = background.select("person_id", "birthday")
-            birthdates.write_parquet(birthdate_path)
-        return birthdates.lazy()
- 
-    def get_lazy_background(self, background_df: pl.DataFrame) -> pl.LazyFrame:
-        """Load or create the background with all columns - ('person_id', 'birthday')"""
-        background_path = self.dir_path / "background.parquet"
- 
-        if (background := self._load_if_exists(background_path)) is None:
-            background = create_background(background_df)
-            background.write_parquet(background_path)
-        return background.lazy()
- 
-    def get_vocab(self, sources: List[pl.LazyFrame]) -> dict:
+    def get_vocab(self, sources: List[ds.Dataset]) -> dict:
         """Load or create the vocabulary"""
         vocab_path = self.dir_path / "vocab.json"
  
@@ -147,15 +117,24 @@ class DataPipeline:
                 json.dump(vocab, f)
         return vocab
  
-    def get_lazy_tokenized_event_lf(
-        self, sources: List[pl.LazyFrame], vocab: dict
-    ) -> pl.LazyFrame:
+    def get_tokenized_event(
+        self, sources: List[ds.Dataset], vocab: dict, birthdates: pl.DataFrame
+    ) -> ds.Dataset:
         """Load or create the tokenized event dataframe"""
  
         tokenized_path = self.dir_path / "tokenized.parquet"
  
-        if (tokenized_event_lf := self._load_if_exists(tokenized_path)) is None:
-            tokenized_event_lf = create_tokenized_events(
-                sources, vocab, self.dir_path
-            )  # tokenized_event_lf is saved within create_tokenized_events function
-        return tokenized_event_lf
+        if (
+            tokenized_event := self._load_if_exists(tokenized_path, backend="arrow")
+        ) is None:
+            tokenized_event = create_tokenized_events(
+                sources=sources,
+                vocab=vocab,
+                birthdates=birthdates,
+                sep_token=self.sep_token,
+                dir_path=self.dir_path,
+                segment=self.segment,
+                fill_nulls=self.fill_nulls,
+            )  # tokenized_event is saved within create_tokenized_events function
+        return tokenized_event
+
