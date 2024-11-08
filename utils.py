@@ -24,3 +24,21 @@ def get_pnrs(sources: Union[ds.Dataset, List[ds.Dataset]]) -> pa.Array:
 def calculate_abspos(date_col: pl.Expr, origin_point=datetime(2020, 1, 1)):
     return (date_col - origin_point).dt.total_seconds() / 60 / 60
 
+def filter_parquet_by_person_ids_to_dataset(
+    file_path: str, person_ids: set[str]
+) -> pa.Table:
+    """
+    Filters a Parquet dataset by a given set of person_ids and returns the filtered data.
+ 
+    Args:
+        file_path (str): The path to the Parquet file.
+        person_ids (set[str]): A set of person IDs to filter by.
+ 
+    Returns:
+        pa.Table: A filtered PyArrow table containing rows matching the person_ids.
+    """
+    # Create a dataset object
+    dataset = ds.dataset(file_path, format="parquet")
+ 
+    return dataset.filter(ds.field("person_id").isin(person_ids))
+
