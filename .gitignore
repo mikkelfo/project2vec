@@ -1,0 +1,4 @@
+
+*.pyc
+*.lock
+.DS_Store
