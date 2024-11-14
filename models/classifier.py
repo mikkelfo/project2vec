@@ -63,11 +63,12 @@ class TransformerEncoder(pl.LightningModule):
         return None
 
     def print_metrics(self, loss, acc, mcc, stage="train"):
-        print(f'{stage.capitalize()} Metrics')
-        print('Train Metrics')
-        print('Loss:', loss)
-        print('Accuracy:', acc)
-        print('MCC:', mcc)
+        print(
+            f'\n{stage.capitalize()} Metrics\n'
+            f'\tLoss: {loss:.3f}\n'
+            f'\tAccuracy: {acc:.3f}\n'
+            f'\tMCC: {mcc:.3f}\n'
+        )
 
     def forward(self, batch):
         """Forward pass that returns the logits for the masked language model and the sequence order prediction task."""
