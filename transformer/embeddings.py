@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.nn.utils import parametrize
-from src.transformer.transformer_utils import ReZero, Center
+from src.transformer.transformer_utils import ReZero
 
 import logging
 log = logging.getLogger(__name__)
@@ -20,62 +19,26 @@ class Embeddings(nn.Module):
             embedding_size,
             padding_idx=0
         )
-        # Initialize Segment embedding matrix
-        self.segment = nn.Embedding(4, hparams.hidden_size, padding_idx=0)
 
         # Initialize Time2Vec embeddings
         self.age = PositionalEmbedding(1, hparams.hidden_size, torch.cos)
         self.abspos = PositionalEmbedding(1, hparams.hidden_size, torch.sin)
-
         # Uniformly initialise the weights of the embedding matrix
         d = 0.01
         nn.init.uniform_(self.token.weight, a=-d, b=d)
-        nn.init.uniform_(self.segment.weight, a=-d, b=d)
-
-        if hparams.parametrize_emb:
-            try:
-                # The centering of the embedding matrix
-                self.parametrize(norm=hparams.norm_input_emb)
-            except:
-                log.info(
-                    "(EMBEDDING) Normalisation hyperparameter is not found, set to FALSE")
-                self.parametrize()
 
         self.res_age = ReZero(hparams.hidden_size, simple=True, fill=0)
         self.res_abs = ReZero(hparams.hidden_size, simple=True, fill=0)
-        self.res_seg = ReZero(hparams.hidden_size, simple=True, fill=0)
         self.dropout = nn.Dropout(hparams.emb_dropout)
 
-    def parametrize(self, norm: bool = False):
-        """Remove Mean from the Embedding Matrix (on each forward pass"""
-        ignore_index = torch.LongTensor(
-            [0, 4, 5, 6, 7, 8])  # We ignore the 5 tokens (PAD, and placeholder tokens that we included into the language but never used)
-
-        parametrize.register_parametrization(
-            self.token, "weight", Center(ignore_index=ignore_index, norm=norm))
-
-    def reparametrization(self):
-        """Remove the parametrization from the Concept Embedding Matrix"""
-
-        parametrize.remove_parametrizations(
-            self.token, "weight", leave_parametrized=False)
-
-    def forward(self, tokens, position, age, segment):
+    def forward(self, tokens, position, age):
         """"""
         tokens = self.token(tokens)
 
         pos = self.age(age.float().unsqueeze(-1))
-        pos[:, :5] *= 0
         tokens = self.res_age(tokens, pos)
-
         pos = self.abspos(position.float().unsqueeze(-1))
-        pos[:, :5] *= 0
         tokens = self.res_abs(tokens, pos)
-
-        if segment is not None:
-            pos = self.segment(segment)
-            tokens = self.res_seg(tokens, pos)
-
         return self.dropout(tokens), None
 
 

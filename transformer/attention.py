@@ -60,7 +60,7 @@ class MultiHeadAttention(nn.Module):
 
         self.step = 0
 
-    def forward(self, x, mask=None):
+    def forward(self, x, padding_mask=None):
         if self.attention_type == "performer":
             """
             FAVOR+ with the Local Heads (aka Performer Attention)
