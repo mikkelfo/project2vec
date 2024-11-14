@@ -25,7 +25,7 @@ class TransformerEncoder(pl.LightningModule):
         # 2. DECODER BLOCK
         self.decoder = CLS_Decoder(self.hparams)
         # 3. LOSS
-        self.loss = nn.CrossEntropyLoss()
+        self.loss = nn.BCEWithLogitsLoss()
         # 4. METRICS
         self.init_metrics()
 
