@@ -2,3 +2,4 @@
 *.pyc
 *.lock
 .DS_Store
+/lightning_logs

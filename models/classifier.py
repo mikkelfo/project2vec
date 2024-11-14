@@ -50,7 +50,7 @@ class TransformerEncoder(pl.LightningModule):
             self.train_loss(loss.detach())
             self.train_acc(predictions, targets)
             self.train_mcc(predictions, targets)
-        elif stage == "valid":
+        elif stage == "val":
             self.valid_loss(loss.detach())
             self.valid_acc(predictions, targets)
             self.valid_mcc(predictions, targets)
