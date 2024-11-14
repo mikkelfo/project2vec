@@ -17,7 +17,7 @@ class SyntheticDataset(Dataset):
     def __getitem__(self, idx):
         tokens = torch.randint(0, self.vocab_size, (self.max_length,))
         abspos = torch.arange(0, self.max_length)
-        age = torch.randint(0, 100, (1,))
+        age = torch.randint(0, 100, (1,)).repeat(self.max_length)
         padding_mask = torch.zeros(self.max_length)
         targets = torch.randint(0, 2, (1,)).float()
         return {
