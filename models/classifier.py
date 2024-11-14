@@ -28,15 +28,15 @@ class TransformerEncoder(pl.LightningModule):
 
     def init_metrics(self):
         self.train_loss = metrics.MeanMetric()
-        self.valid_loss = metrics.MeanMetric()
+        self.val_loss = metrics.MeanMetric()
         self.test_loss = metrics.MeanMetric()
 
         self.train_acc = metrics.Accuracy(task="binary")
-        self.valid_acc = metrics.Accuracy(task="binary")
+        self.val_acc = metrics.Accuracy(task="binary")
         self.test_acc = metrics.Accuracy(task="binary")
 
         self.train_mcc = metrics.MatthewsCorrCoef(task="binary")
-        self.valid_mcc = metrics.MatthewsCorrCoef(task="binary")
+        self.val_mcc = metrics.MatthewsCorrCoef(task="binary")
         self.test_mcc = metrics.MatthewsCorrCoef(task="binary")
 
     def log_metrics(self, predictions, targets,  loss, stage: str):
@@ -48,9 +48,9 @@ class TransformerEncoder(pl.LightningModule):
             self.train_acc(predictions, targets)
             self.train_mcc(predictions, targets)
         elif stage == "val":
-            self.valid_loss(loss.detach())
-            self.valid_acc(predictions, targets)
-            self.valid_mcc(predictions, targets)
+            self.val_loss(loss.detach())
+            self.val_acc(predictions, targets)
+            self.val_mcc(predictions, targets)
         elif stage == "test":
             self.test_loss(loss.detach())
             self.test_acc(predictions, targets)
@@ -125,7 +125,7 @@ class TransformerEncoder(pl.LightningModule):
         self.log("train_mcc", mcc)
         self.print_metrics(loss, acc, mcc, stage="train")
 
-    def on_val_epoch_end(self, *kwargs):
+    def on_validation_epoch_end(self, *kwargs):
         loss, acc, mcc = self.val_loss.compute(
         ), self.val_acc.compute(), self.val_mcc.compute()
         self.log("val_loss",  loss)
