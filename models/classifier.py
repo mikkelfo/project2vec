@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchmetrics
+import torchmetrics as metrics
 import pytorch_lightning as pl
 from pathlib import Path
 import logging
@@ -24,22 +24,93 @@ class TransformerEncoder(pl.LightningModule):
 
         # 2. DECODER BLOCK
         self.decoder = CLS_Decoder(self.hparams)
+        # 3. LOSS
         self.loss = nn.CrossEntropyLoss()
+        # 4. METRICS
+        self.init_metrics()
+
+    def init_metrics(self):
+        self.train_loss = metrics.MeanMetric()
+        self.valid_loss = metrics.MeanMetric()
+        self.test_loss = metrics.MeanMetric()
+
+        self.train_acc = metrics.Accuracy(task="binary")
+        self.valid_acc = metrics.Accuracy(task="binary")
+        self.test_acc = metrics.Accuracy(task="binary")
+
+        self.train_mcc = metrics.MatthewsCorrCoef(task="binary")
+        self.valid_mcc = metrics.MatthewsCorrCoef(task="binary")
+        self.test_mcc = metrics.MatthewsCorrCoef(task="binary")
+
+    def log_metrics(self, predictions, targets,  loss, stage="train"):
+        """Log the metrics"""
+        predictions = predictions.detach()
+        targets = targets.detach()
+        if stage == "train":
+            self.train_loss(loss.detach())
+            self.train_acc(predictions, targets)
+            self.train_mcc(predictions, targets)
+        elif stage == "valid":
+            self.valid_loss(loss.detach())
+            self.valid_acc(predictions, targets)
+            self.valid_mcc(predictions, targets)
+        elif stage == "test":
+            self.test_loss(loss.detach())
+            self.test_acc(predictions, targets)
+            self.test_mcc(predictions, targets)
+        else:
+            raise NotImplementedError()
+        return None
+
+    def print_metrics(self, loss, acc, mcc, stage="train"):
+        print(f'{stage.capitalize()} Metrics')
+        print('Train Metrics')
+        print('Loss:', loss)
+        print('Accuracy:', acc)
+        print('MCC:', mcc)
 
     def forward(self, batch):
         """Forward pass that returns the logits for the masked language model and the sequence order prediction task."""
         # 1. ENCODER INPUT
-        predicted = self.transformer(batch)
+        encoded = self.transformer(batch)
         # 2. MASKED LANGUAGE MODEL
-        prediction = self.decoder(predicted)
-        return prediction
+        logits = self.decoder(encoded)
+        preds = nn.functional.sigmoid(logits)
+
+        return {"logits": logits,
+                "preds": preds}
 
     def training_step(self, batch, batch_idx):
         """Training Step"""
         # 1. ENCODER-DECODER
-        mlm_preds, sop_preds = self(batch)
+        output = self(batch)
         # 2. LOSS
-        return self.calculate_total_loss(mlm_preds, sop_preds, batch)
+        loss = self.loss(output["logits"], batch["targets"])
+        # 3. LOGGING
+        self.log_metrics(
+            output["preds"], batch["targets"], loss, stage="train")
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        """Validation Step"""
+        # 1. ENCODER-DECODER
+        output = self(batch)
+        # 2. LOSS
+        loss = self.loss(output["logits"], batch["targets"])
+        # 3. LOGGING
+        self.log_metrics(
+            output["preds"], batch["targets"], loss, stage="val")
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        # 1. ENCODER-DECODER
+        output = self(batch)
+        # 2. LOSS
+        loss = self.loss(output["logits"], batch["targets"])
+        # 3. LOGGING
+        self.log_metrics(
+            output["preds"], batch["targets"], loss, stage="test")
+        return loss
 
     def on_train_epoch_end(self, *kwargs):
         """On Train Epoch End: Redraw the projection of the Attention-related matrices"""
@@ -49,18 +120,28 @@ class TransformerEncoder(pl.LightningModule):
             raise NotImplementedError(
                 "We only have a Performer implementation.")
 
-    def validation_step(self, batch, batch_idx):
-        """Validation Step"""
-        # 1. ENCODER-DECODER
-        mlm_preds, sop_preds = self(batch)
-        # 2. LOSS
-        return self.calculate_total_loss(mlm_preds, sop_preds, batch)
+        loss, acc, mcc = self.train_loss.compute(
+        ), self.train_acc.compute(), self.train_mcc.compute()
+        self.log("train_loss",  loss)
+        self.log("train_acc", acc)
+        self.log("train_mcc", mcc)
+        self.print_metrics(loss, acc, mcc, stage="train")
 
-    def test_step(self, batch, batch_idx):
-        # 1. ENCODER-DECODER
-        mlm_preds, sop_preds = self(batch)
-        # 2. LOSS
-        return self.calculate_total_loss(mlm_preds, sop_preds, batch)
+    def on_val_epoch_end(self, *kwargs):
+        loss, acc, mcc = self.val_loss.compute(
+        ), self.val_acc.compute(), self.val_mcc.compute()
+        self.log("val_loss",  loss)
+        self.log("val_acc", acc)
+        self.log("val_mcc", mcc)
+        self.print_metrics(loss, acc, mcc, stage="val")
+
+    def on_test_epoch_end(self, *kwargs):
+        loss, acc, mcc = self.test_loss.compute(
+        ), self.test_acc.compute(), self.test_mcc.compute()
+        self.log("test_loss",  loss)
+        self.log("test_acc", acc)
+        self.log("test_mcc", mcc)
+        self.print_metrics(loss, acc, mcc, stage="test")
 
     def configure_optimizers(self):
         """Configuration of the Optimizer and the Learning Rate Scheduler."""

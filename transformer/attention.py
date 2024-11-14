@@ -1,5 +1,5 @@
 import torch.nn as nn
-from src.transformer.performer import CustomSelfAttention
+from transformer.performer import CustomSelfAttention
 import logging
 
 log = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ class MultiHeadAttention(nn.Module):
 
         self.step = 0
 
-    def forward(self, x, padding_mask=None):
+    def forward(self, x, mask=None):
         if self.attention_type == "performer":
             """
             FAVOR+ with the Local Heads (aka Performer Attention)

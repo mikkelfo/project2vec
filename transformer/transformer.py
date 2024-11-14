@@ -37,13 +37,13 @@ class Transformer(nn.Module):
             batch: dict with keys: tokens, position, age, segment, padding_mask
         """
         x, _ = self.embedding(
-            tokens=batch.tokens,
-            position=batch.abspos,
-            age=batch.age
+            tokens=batch["tokens"],
+            position=batch["abspos"],
+            age=batch["age"]
         )
         for layer in self.encoders:
-            x = torch.einsum("bsh, bs -> bsh", x, batch.padding_mask)
-            x = layer(x, padding_mask=batch.padding_mask)
+            x = torch.einsum("bsh, bs -> bsh", x, batch["padding_mask"])
+            x = layer(x, mask=batch["padding_mask"])
         return x
 
     def redraw_projection_matrix(self, batch_idx: int):

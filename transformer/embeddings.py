@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from src.transformer.transformer_utils import ReZero
+from transformer.transformer_utils import ReZero
 
 import logging
 log = logging.getLogger(__name__)

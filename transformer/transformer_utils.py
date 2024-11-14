@@ -6,7 +6,6 @@ import math
 import logging
 import torch
 from torch import nn
-import numpy as np
 
 log = logging.getLogger(__name__)
 
