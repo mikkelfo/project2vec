@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchmetrics as metrics
 import pytorch_lightning as pl
-from pathlib import Path
 import logging
 
 """Custom code"""
@@ -21,7 +19,6 @@ class TransformerEncoder(pl.LightningModule):
         self.last_global_step = 0
         # 1. ENCODER
         self.transformer = Transformer(self.hparams)
-
         # 2. DECODER BLOCK
         self.decoder = CLS_Decoder(self.hparams)
         # 3. LOSS
@@ -42,7 +39,7 @@ class TransformerEncoder(pl.LightningModule):
         self.valid_mcc = metrics.MatthewsCorrCoef(task="binary")
         self.test_mcc = metrics.MatthewsCorrCoef(task="binary")
 
-    def log_metrics(self, predictions, targets,  loss, stage="train"):
+    def log_metrics(self, predictions, targets,  loss, stage: str):
         """Log the metrics"""
         predictions = predictions.detach()
         targets = targets.detach()
@@ -62,7 +59,7 @@ class TransformerEncoder(pl.LightningModule):
             raise NotImplementedError()
         return None
 
-    def print_metrics(self, loss, acc, mcc, stage="train"):
+    def print_metrics(self, loss, acc, mcc, stage: str):
         print(
             f'\n{stage.capitalize()} Metrics\n'
             f'\tLoss: {loss:.3f}\n'
