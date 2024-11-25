@@ -5,7 +5,7 @@ import logging
 
 # Model and Data
 from models.classifier import TransformerEncoder
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from dataloaders.synthetic import SyntheticDataModule
@@ -23,6 +23,7 @@ def main(args):
     model_checkpoint = ModelCheckpoint(
         monitor='val/ap', save_top_k=2, save_last=True, mode='max')
     early_stopping = EarlyStopping(monitor='val/ap', patience=5, mode='max')
+    lr_monitor = LearningRateMonitor(logging_interval='step')
     logger = TensorBoardLogger("lightning_logs", name="cls_logs")
 
     trainer = Trainer(max_epochs=30,
@@ -31,7 +32,7 @@ def main(args):
                       logger=logger,
                       accumulate_grad_batches=4,
                       num_sanity_val_steps=8,
-                      callbacks=[model_checkpoint, early_stopping],
+                      callbacks=[model_checkpoint, early_stopping, lr_monitor],
                       check_val_every_n_epoch=1)
 
     trainer.fit(model, dataloader)

@@ -16,6 +16,7 @@ class TransformerEncoder(pl.LightningModule):
     def __init__(self, hparams):
         super(TransformerEncoder, self).__init__()
         self.hparams.update(hparams)
+
         self.last_global_step = 0
         # 1. ENCODER
         self.transformer = Transformer(self.hparams)
@@ -103,6 +104,14 @@ class TransformerEncoder(pl.LightningModule):
 
         return {"logits": logits,
                 "preds": preds}
+
+    def steps_per_epoch(self):
+        num_batches = self.trainer.limit_train_batches
+        if num_batches == None:
+            num_batches = 100
+        accumulate_grad_batches = self.trainer.accumulate_grad_batches
+        return (
+            num_batches + accumulate_grad_batches - 1) // accumulate_grad_batches
 
     def training_step(self, batch, batch_idx):
         """Training Step"""
@@ -206,12 +215,19 @@ class TransformerEncoder(pl.LightningModule):
             eps=self.hparams.epsilon,
         )
 
+        if self.steps_per_epoch() == 0:
+            steps_per_epoch = 100
+        else:
+            steps_per_epoch = self.steps_per_epoch()
+
+        log.warning(f"Steps per epoch: {steps_per_epoch}")
+
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": torch.optim.lr_scheduler.OneCycleLR(
                     optimizer, max_lr=self.hparams.learning_rate,
-                    epochs=self.hparams.num_epochs, steps_per_epoch=375,
+                    epochs=self.hparams.num_epochs, steps_per_epoch=steps_per_epoch,
                     three_phase=False, pct_start=0.05, max_momentum=self.hparams.beta1,
                     div_factor=30
                 ),
