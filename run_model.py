@@ -5,17 +5,36 @@ import logging
 
 # Model and Data
 from models.classifier import TransformerEncoder
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning import Trainer
-from utils import get_device
-
-import torch
+from pytorch_lightning.loggers import TensorBoardLogger
+from dataloaders.synthetic import SyntheticDataModule
 
 
 log = logging.getLogger(__name__)
 
 
 def main(args):
-    pass
+    log.warning("(INFO) Starting the training process.")
+    model = TransformerEncoder(args.__dict__)
+    dataloader = SyntheticDataModule(num_samples=1000, max_length=args.max_length,
+                                     batch_size=args.batch_size, vocab_size=args.vocab_size)
+
+    model_checkpoint = ModelCheckpoint(
+        monitor='val/ap', save_top_k=2, save_last=True, mode='max')
+    early_stopping = EarlyStopping(monitor='val/ap', patience=5, mode='max')
+    logger = TensorBoardLogger("lightning_logs", name="cls_logs")
+
+    trainer = Trainer(max_epochs=30,
+                      accelerator=args.device,  # change to "cuda" or "gpu" or 'msp'
+                      limit_train_batches=0.5,
+                      logger=logger,
+                      accumulate_grad_batches=4,
+                      num_sanity_val_steps=8,
+                      callbacks=[model_checkpoint, early_stopping],
+                      check_val_every_n_epoch=1)
+
+    trainer.fit(model, dataloader)
 
 
 if __name__ == "__main__":
@@ -71,5 +90,8 @@ if __name__ == "__main__":
                         help="Beta1 hyperparameter for Adam optimizer.")
     parser.add_argument("--beta2", type=float, default=0.999,
                         help="Beta2 hyperparameter for Adam optimizer.")
+    parser.add_argument("--device", type=str, default="cpu",
+                        help="Device to use for training.")
 
     args = parser.parse_args()
+    main(args)
