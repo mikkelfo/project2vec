@@ -39,6 +39,10 @@ class TransformerEncoder(pl.LightningModule):
         self.val_mcc = metrics.MatthewsCorrCoef(task="binary")
         self.test_mcc = metrics.MatthewsCorrCoef(task="binary")
 
+        self.train_ap = metrics.AveragePrecision(task="binary")
+        self.val_ap = metrics.AveragePrecision(task="binary")
+        self.test_ap = metrics.AveragePrecision(task="binary")
+
     def log_metrics(self, predictions, targets,  loss, stage: str):
         """Log the metrics"""
         predictions = predictions.detach()
@@ -47,14 +51,36 @@ class TransformerEncoder(pl.LightningModule):
             self.train_loss(loss.detach())
             self.train_acc(predictions, targets)
             self.train_mcc(predictions, targets)
+            self.train_ap(predictions, targets.long())
+
+            self.log("train/loss", self.train_loss,
+                     on_step=True, on_epoch=True)
+            self.log("train/acc", self.train_acc, on_step=True, on_epoch=True)
+            self.log("train/mcc", self.train_mcc, on_step=True, on_epoch=True)
+            self.log("train/ap", self.train_ap, on_step=True, on_epoch=True)
+
         elif stage == "val":
             self.val_loss(loss.detach())
             self.val_acc(predictions, targets)
             self.val_mcc(predictions, targets)
+            self.val_ap(predictions, targets.long())
+
+            self.log("val/loss", self.val_loss, on_step=True, on_epoch=True)
+            self.log("val/acc", self.val_acc, on_step=True, on_epoch=True)
+            self.log("val/mcc", self.val_mcc, on_step=True, on_epoch=True)
+            self.log("val/ap", self.val_ap, on_step=True, on_epoch=True)
+
         elif stage == "test":
             self.test_loss(loss.detach())
             self.test_acc(predictions, targets)
             self.test_mcc(predictions, targets)
+            self.test_ap(predictions, targets.long())
+
+            self.log("test/loss", self.test_loss, on_step=True, on_epoch=True)
+            self.log("test/acc", self.test_acc, on_step=True, on_epoch=True)
+            self.log("test/mcc", self.test_mcc, on_step=True, on_epoch=True)
+            self.log("test/ap", self.test_ap, on_step=True, on_epoch=True)
+
         else:
             raise NotImplementedError()
         return None
@@ -118,28 +144,28 @@ class TransformerEncoder(pl.LightningModule):
             raise NotImplementedError(
                 "We only have a Performer implementation.")
 
-        loss, acc, mcc = self.train_loss.compute(
-        ), self.train_acc.compute(), self.train_mcc.compute()
-        self.log("train_loss",  loss)
-        self.log("train_acc", acc)
-        self.log("train_mcc", mcc)
-        self.print_metrics(loss, acc, mcc, stage="train")
+        # loss, acc, mcc = self.train_loss.compute(
+        # ), self.train_acc.compute(), self.train_mcc.compute()
+        # self.log("train_loss",  loss)
+        # self.log("train_acc", acc)
+        # self.log("train_mcc", mcc)
+        # self.print_metrics(loss, acc, mcc, stage="train")
 
-    def on_validation_epoch_end(self, *kwargs):
-        loss, acc, mcc = self.val_loss.compute(
-        ), self.val_acc.compute(), self.val_mcc.compute()
-        self.log("val_loss",  loss)
-        self.log("val_acc", acc)
-        self.log("val_mcc", mcc)
-        self.print_metrics(loss, acc, mcc, stage="val")
+    # def on_validation_epoch_end(self, *kwargs):
+    #     loss, acc, mcc = self.val_loss.compute(
+    #     ), self.val_acc.compute(), self.val_mcc.compute()
+    #     self.log("val_loss",  loss, )
+    #     self.log("val_acc", acc)
+    #     self.log("val_mcc", mcc)
+    #     self.print_metrics(loss, acc, mcc, stage="val")
 
-    def on_test_epoch_end(self, *kwargs):
-        loss, acc, mcc = self.test_loss.compute(
-        ), self.test_acc.compute(), self.test_mcc.compute()
-        self.log("test_loss",  loss)
-        self.log("test_acc", acc)
-        self.log("test_mcc", mcc)
-        self.print_metrics(loss, acc, mcc, stage="test")
+    # def on_test_epoch_end(self, *kwargs):
+    #     loss, acc, mcc = self.test_loss.compute(
+    #     ), self.test_acc.compute(), self.test_mcc.compute()
+    #     self.log("test_loss",  loss)
+    #     self.log("test_acc", acc)
+    #     self.log("test_mcc", mcc)
+    #     self.print_metrics(loss, acc, mcc, stage="test")
 
     def configure_optimizers(self):
         """Configuration of the Optimizer and the Learning Rate Scheduler."""
