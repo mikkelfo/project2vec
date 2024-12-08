@@ -8,9 +8,9 @@ from utils import get_pnrs
 
 def yield_chunks(dataset: ds.Dataset, chunk_size: int) -> ds.Dataset:
     pnrs = get_pnrs(dataset)
-    for i in range(0, len(dataset), chunk_size):
+    for i in range(0, dataset.count_rows(), chunk_size):
         chunk_pnrs = pnrs[i : i + chunk_size]
-        yield pl.from_arrow(dataset.to_table(filter=pc.is_in(pc.field("person_id", chunk_pnrs))))
+        yield pl.from_arrow(dataset.to_table(filter=pc.is_in(pc.field("person_id"), chunk_pnrs)))
 
 def write_dataset_to_parquet_in_batches(
     dataset: ds.Dataset, output_path: Path, batch_size: int = 10_000_000
