@@ -21,7 +21,7 @@ class SyntheticDataset(Dataset):
         padding_mask = torch.zeros(self.max_length)
         targets = torch.randint(0, 2, (1,)).float()
         return {
-            "tokens": tokens,
+            "event": tokens,
             "abspos": abspos,
             "age": age,
             "padding_mask": padding_mask,

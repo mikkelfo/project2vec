@@ -1,14 +1,12 @@
 import json
-import numpy as np
 from torch.utils.data import Dataset
-import torch
-from torch.nn.utils.rnn import pad_sequence
 import pyarrow.dataset as ds
 from chunking import yield_chunks
 import polars as pl
 import pytorch_lightning as torchl
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
+from collate_fn import CensorCollate
 
 import pandas as pd
 
@@ -36,7 +34,7 @@ class InMemoryDataset(Dataset):
 
     def __getitem__(self, idx):
         pnr = self.pnrs[idx]
-        return self.data[pnr]
+        return {key: val for key, val in self.data[pnr].items()}
 
     def split_data(self, prop_val):
         indices = list(range(len(self.data)))
@@ -69,12 +67,18 @@ class DataModule(torchl.LightningDataModule):
         self.train_indices = None
         self.val_indices = None
 
-        # set padding value to be the next integer after the largest key in the vocab
+        # check vocab is correct (only needed for synthetic data)
         with open (vocab_path, 'r') as f:
             vocab = json.load(f)
+        assert vocab["[PAD]"] == 0
 
-        max_key = max(vocab.values())
-        self.padding_value = max_key + 1
+
+        self.collate_fn = CensorCollate(
+            truncate_length=512, # TODO: Adjust accordingly
+            background_length=0, # TODO: Need proper value
+            segment=False,
+            negative_censor=0,
+        )
     
     def setup(self, stage=None):
         dataset = ds.dataset(self.sequence_path, format='parquet')
@@ -86,46 +90,46 @@ class DataModule(torchl.LightningDataModule):
         targets = targets.set_index('person_id')['target'].squeeze().to_dict()
         self.dataset = InMemoryDataset(dataset, targets=targets, prop_val=0.2)
     
-    def collate_fn(self, batch):
-        # Flatten `event`, `age`, and `abspos` fields for each item in the batch
-        events_flat = [
-            torch.tensor([event for events in item['event'] for event in events])
-            for item in batch
-        ]
-        ages_flat = [
-            torch.tensor(
-                np.repeat(item['age'], repeats=[len(events) for events in item['event']])
-            )
-            for item in batch
-        ]
-        abspos_flat = [
-            torch.tensor(
-                np.repeat(item['abspos'], repeats=[len(events) for events in item['event']])
-            )
-            for item in batch
-        ]
+    # def collate_fn(self, batch):
+    #     # Flatten `event`, `age`, and `abspos` fields for each item in the batch
+    #     events_flat = [
+    #         torch.tensor([event for events in item['event'] for event in events])
+    #         for item in batch
+    #     ]
+    #     ages_flat = [
+    #         torch.tensor(
+    #             np.repeat(item['age'], repeats=[len(events) for events in item['event']])
+    #         )
+    #         for item in batch
+    #     ]
+    #     abspos_flat = [
+    #         torch.tensor(
+    #             np.repeat(item['abspos'], repeats=[len(events) for events in item['event']])
+    #         )
+    #         for item in batch
+    #     ]
 
-        # Pad sequences to the maximum length in the batch
-        padded_events = pad_sequence(events_flat, batch_first=True, padding_value=self.padding_value)
-        padded_age = pad_sequence(ages_flat, batch_first=True, padding_value=0)
-        padded_abspos = pad_sequence(abspos_flat, batch_first=True, padding_value=0)
+    #     # Pad sequences to the maximum length in the batch
+    #     padded_events = pad_sequence(events_flat, batch_first=True, padding_value=self.padding_value)
+    #     padded_age = pad_sequence(ages_flat, batch_first=True, padding_value=0)
+    #     padded_abspos = pad_sequence(abspos_flat, batch_first=True, padding_value=0)
 
-        # Create a padding mask
-        padding_mask = (padded_events == self.padding_value).to(torch.int64)
+    #     # Create a padding mask
+    #     padding_mask = (padded_events == self.padding_value).to(torch.int64)
 
-        # Collect targets
-        targets = torch.tensor([[item['target']] for item in batch], dtype=torch.float64)
+    #     # Collect targets
+    #     targets = torch.tensor([[item['target']] for item in batch], dtype=torch.float64)
 
-        # Construct the padded batch dictionary
-        padded_batch = {
-            'tokens': padded_events,
-            'age': padded_age,
-            'abspos': padded_abspos,
-            'padding_mask': padding_mask,
-            'targets': targets,
-        }
+    #     # Construct the padded batch dictionary
+    #     padded_batch = {
+    #         'tokens': padded_events,
+    #         'age': padded_age,
+    #         'abspos': padded_abspos,
+    #         'padding_mask': padding_mask,
+    #         'targets': targets,
+    #     }
 
-        return padded_batch
+    #     return padded_batch
     
     
     def train_dataloader(self):

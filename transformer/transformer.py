@@ -34,10 +34,10 @@ class Transformer(nn.Module):
     def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass
         Input:
-            batch: dict with keys: tokens, position, age, segment, padding_mask
+            batch: dict with keys: event, position, age, segment, padding_mask
         """
         x, _ = self.embedding(
-            tokens=batch["tokens"],
+            tokens=batch["event"],
             position=batch["abspos"],
             age=batch["age"]
         )
