@@ -12,31 +12,14 @@ from sklearn.model_selection import train_test_split
 
 import pandas as pd
 
-class InMemoryDatasetSubset(Dataset):
-    """ 
-    Dataset class to for train and validation subsets
-    of the full dataset class below. 
-    """
-    def __init__(self, data, idx_to_pnr):
-        self.data = data
-        self.idx_to_pnr = idx_to_pnr
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        pnr = self.idx_to_pnr[idx]
-        return self.data[pnr]
-
-
 class InMemoryDataset(Dataset):
     def __init__(self, dataset: ds.dataset, targets: dict, prop_val):
-        self.data, self.idx_to_pnr= self.create_db(dataset, targets)
+        self.data = self.create_db(dataset, targets)
+        self.pnrs = list(self.data.keys())
         self.train_indices, self.val_indices = self.split_data(prop_val=prop_val)
 
     def create_db(self, data, targets: dict):
         dataset_dict = {} # mapping from person_id to data point
-        idx_to_pnr= {} # mapping from dataset index to person_id
         i = 0
         for chunk_df in yield_chunks(data, 100_000): # Unnecessary if InMemory, but kept for consistency
             for person in chunk_df.group_by("person_id").agg(pl.all().sort_by("abspos")).iter_rows(named=True):
@@ -44,32 +27,34 @@ class InMemoryDataset(Dataset):
                 if id in targets:
                     dataset_dict[id] = person
                     dataset_dict[id]['target'] = targets[id]
-                    idx_to_pnr[i] = id
                     i += 1
 
-        return dataset_dict, idx_to_pnr
+        return dataset_dict
 
     def __len__(self):
-        return len(self.data)
+        return len(self.pnrs)
 
     def __getitem__(self, idx):
-        pnr = self.idx_to_pnr[idx]
+        pnr = self.pnrs[idx]
         return self.data[pnr]
 
     def split_data(self, prop_val):
-        indices = list(self.idx_to_pnr.keys())
+        indices = list(range(len(self.data)))
         train_indices, val_indices = train_test_split(indices, test_size=prop_val, random_state=42)
         return train_indices, val_indices
 
     def get_training_data(self):
         train_data = {i: self.data[i] for i in self.train_indices}
-        train_idx_to_pnr = {i: self.idx_to_pnr[i] for i in self.train_indices}
-        return InMemoryDatasetSubset(train_data, train_idx_to_pnr)
+        return InMemoryDatasetSubset(train_data)
 
     def get_validation_data(self):
         val_data = {i: self.data[i] for i in self.val_indices}
-        val_idx_to_pnr = {i: self.idx_to_pnr[i] for i in self.val_indices}
-        return InMemoryDatasetSubset(val_data, val_idx_to_pnr)
+        return InMemoryDatasetSubset(val_data)
+    
+class InMemoryDatasetSubset(InMemoryDataset):
+    def __init__(self, data):
+        self.data = data
+        self.pnrs = list(self.data.keys())
   
 
 class DataModule(torchl.LightningDataModule):
