@@ -198,6 +198,8 @@ class CensorCollate(Collate):
         return censored_data
 
     def _censor_person(self, person, censor_abspos):
+        if not person:
+            return person
         abspos = person["abspos"]
         if censor_abspos is None:
             censor_abspos = (
@@ -227,12 +229,15 @@ class PartnerCensorCollate(CensorCollate):
         for person, partner in zip(data, partner_data):
             indv = self.process_person(person)
             indv["partner_type"] = [1] * len(indv["event"])
-            partner_indv = self.process_person(partner)
-            partner_indv["partner_type"] = [2] * len(partner_indv["event"])
+            if partner:
+                partner_indv = self.process_person(partner)
+                partner_indv["partner_type"] = [2] * len(partner_indv["event"])
 
-            couple = {}
-            for key in indv.keys():
-                couple[key] = self.concat(indv[key], partner_indv[key])
+                couple = {}
+                for key in indv.keys():
+                    couple[key] = self.concat(indv[key], partner_indv[key])
+            else:
+                couple = indv
 
             for key, v in couple.items():
                 output.setdefault(key, []).append(v)
