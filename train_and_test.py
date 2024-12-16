@@ -8,21 +8,53 @@ from models.classifier import TransformerEncoder
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import CSVLogger
-from dataloaders.synthetic import SyntheticDataModule
+
+from dataset import DataModule
 
 log = logging.getLogger(__name__)
 
+
+def load_datamodule(
+    sequence_path='fake_data/sequence_data.parquet',
+    targets_path='fake_data/targets.csv',
+    vocab_path='fake_data/vocab.json', 
+    batch_size=128):
+
+    dataloader = DataModule(
+        sequence_path=sequence_path, 
+        batch_size=batch_size,
+        target_path=targets_path,
+        vocab_path=vocab_path,
+        )
+
+    return dataloader
 
 
 def main(args):
     log.warning("(INFO) Starting the training process.")
     model = TransformerEncoder(args.__dict__)
-    dataloader = SyntheticDataModule(num_samples=1000, max_length=args.max_length,
-                                     batch_size=args.batch_size, vocab_size=args.vocab_size)
+    sequence_path = 'fake_data/sequence_data.parquet'
+    vocab_path = 'fake_data/vocab.json'
 
-    model_checkpoint = ModelCheckpoint(
-        monitor='val/ap', save_top_k=2, save_last=True, mode='max')
-    early_stopping = EarlyStopping(monitor='val/ap', patience=5, mode='max')
+    # load targets for training/validation adnf for testing
+    train_targets_path = 'fake_data/targets.csv'
+    test_targets_path = 'fake_data/targets.csv'
+
+    fit_dataloader = load_datamodule(
+        sequence_path=sequence_path,
+        vocab_path=vocab_path,
+        targets_path=train_targets_path,
+        batch_size=128
+        )
+    test_dataloader = load_datamodule(
+        sequence_path=sequence_path,
+        vocab_path=vocab_path,
+        targets_path=test_targets_path,
+        batch_size=128
+        )
+
+    model_checkpoint = ModelCheckpoint( monitor='val/ap', save_top_k=2, save_last=True, mode='max')
+    early_stopping = EarlyStopping( monitor='val/ap', patience=5, mode='max')
     lr_monitor = LearningRateMonitor(logging_interval='step')
     logger = CSVLogger("lightning_logs", name="cls_logs")
 
@@ -35,7 +67,10 @@ def main(args):
                       callbacks=[model_checkpoint, early_stopping, lr_monitor],
                       check_val_every_n_epoch=1)
 
-    trainer.fit(model, dataloader)
+    trainer.fit(model, fit_dataloader)
+
+    model.predict(test_dataloader)
+
 
 
 if __name__ == "__main__":
