@@ -6,7 +6,7 @@ import polars as pl
 import pytorch_lightning as torchl
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
-from collate_fn import CensorCollate
+from collate_fn import CensorCollate, PartnerCensorCollate
 
 import pandas as pd
 
@@ -53,7 +53,51 @@ class InMemoryDatasetSubset(InMemoryDataset):
     def __init__(self, data):
         self.data = data
         self.pnrs = list(self.data.keys())
-  
+
+
+class PartnerInMemoryDataset(InMemoryDataset):
+    def __init__(self, dataset: ds.dataset, targets: dict, partners: dict, prop_val):
+        self.data = self.create_db(dataset, targets, partners)
+        self.pnrs = list(self.data.keys())
+        self.train_indices, self.val_indices = self.split_data(prop_val=prop_val)
+
+    def create_db(self, data, targets: dict, partners: dict):
+        dataset_dict = {} # mapping from person_id to data point
+        i = 0
+        for chunk_df in yield_chunks(data, 100_000): # Unnecessary if InMemory, but kept for consistency
+            for person in chunk_df.group_by("person_id").agg(pl.all().sort_by("abspos")).iter_rows(named=True):
+                id = person.pop("person_id")
+                if id in targets:
+                    dataset_dict[id] = person
+                    dataset_dict[id]['target'] = targets[id]
+                    dataset_dict[id]['partner'] = partners[id]
+                    i += 1
+
+        return dataset_dict
+
+    def __getitem__(self, idx):
+        pnr = self.pnrs[idx]
+        person = {key: val for key, val in self.data[pnr].items()}
+        partner_id = person.pop('partner')
+        if partner_id in self.data:
+            partner = {key: val for key, val in self.data[partner_id].items() if key not in ["partner", "target"]}
+        else:
+            partner = {}
+        return person, partner
+
+    def get_training_data(self):
+        train_data = {i: self.data[i] for i in self.train_indices}
+        return ParentInMemoryDatasetSubset(train_data)
+
+    def get_validation_data(self):
+        val_data = {i: self.data[i] for i in self.val_indices}
+        return ParentInMemoryDatasetSubset(val_data)
+
+class ParentInMemoryDatasetSubset(PartnerInMemoryDataset):
+    def __init__(self, data):
+        self.data = data
+        self.pnrs = list(self.data.keys())
+
 
 class DataModule(torchl.LightningDataModule):
     def __init__(self, sequence_path, batch_size, target_path, vocab_path, subset=False, prop_val=0.2):
@@ -143,3 +187,27 @@ class DataModule(torchl.LightningDataModule):
         # implement splitter
         #return DataLoader(self.dataset, batch_size=self.batch_size, collate_fn=self.collate_fn)
         return None
+
+
+class PartnerDataModule(DataModule):
+    def __init__(self, sequence_path, batch_size, target_path, vocab_path, subset=False, prop_val=0.2):
+        super().__init__(sequence_path, batch_size, target_path, vocab_path, subset, prop_val)
+
+        self.collate_fn = PartnerCensorCollate(
+            truncate_length=512, # TODO: Adjust accordingly
+            background_length=0, # TODO: Need proper value
+            segment=False,
+            negative_censor=0,
+        )
+
+    def setup(self, stage=None):
+        dataset = ds.dataset(self.sequence_path, format='parquet')
+        targets = pd.read_csv(self.target_path)
+
+        if self.subset:
+            targets = targets.head(1000)
+
+        targets_dict = targets.set_index('person_id')['target'].squeeze().to_dict()
+        partners_dict = targets.set_index('person_id')['partner'].squeeze().to_dict()
+        self.dataset = PartnerInMemoryDataset(dataset, targets=targets_dict, partners=partners_dict, prop_val=0.2)
+

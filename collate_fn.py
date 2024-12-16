@@ -210,3 +210,50 @@ class CensorCollate(Collate):
 
     def _adjust_targets(self, targets):
         return torch.as_tensor(targets, dtype=torch.float32).unsqueeze(1)
+
+
+class PartnerCensorCollate(CensorCollate):
+    def __call__(self, batch: Tuple[List[Dict], List[Dict]]) -> Dict:
+        """Input: List of Batch, Outcomes"""
+        person_batch, partners_batch = zip(*batch)
+        targets = [person.pop("target") for person in person_batch]
+        data = self._censor(person_batch)
+        partner_data = self._censor(partners_batch)
+
+        # Standard __call__ with small modifications
+        data_keys = [key for key in batch[0][0]] + ["segment"] * int(self.segment) + ["partner_type"]
+        output = {key: [] for key in data_keys + ["sequence_lens"]}
+
+        for person, partner in zip(data, partner_data):
+            indv = self.process_person(person)
+            indv["partner_type"] = [1] * len(indv["event"])
+            partner_indv = self.process_person(partner)
+            partner_indv["partner_type"] = [2] * len(partner_indv["event"])
+
+            couple = {}
+            for key in indv.keys():
+                couple[key] = self.concat(indv[key], partner_indv[key])
+
+            for key, v in couple.items():
+                output.setdefault(key, []).append(v)
+
+            # Add padding information
+            output["sequence_lens"].append(len(couple["event"]))
+
+        # Pad all person keys
+        for key in data_keys:
+            output[key] = self._pad(output[key])
+        output["sequence_lens"] = torch.as_tensor(output["sequence_lens"])
+
+        output["padding_mask"] = output["event"] == 0
+
+        output["targets"] = self._adjust_targets(targets)
+
+        return output
+
+    @staticmethod
+    def concat(x1, x2):
+        if isinstance(x1, torch.Tensor):
+            return torch.cat((x1, x2))
+        return x1 + x2
+
