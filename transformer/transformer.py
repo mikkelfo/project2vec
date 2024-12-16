@@ -39,7 +39,8 @@ class Transformer(nn.Module):
         x, _ = self.embedding(
             tokens=batch["event"],
             position=batch["abspos"],
-            age=batch["age"]
+            age=batch["age"],
+            partner_type=batch.get("partner_type"),
         )
         for layer in self.encoders:
             x = torch.einsum("bsh, bs -> bsh", x, batch["padding_mask"])

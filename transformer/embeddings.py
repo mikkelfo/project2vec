@@ -31,7 +31,10 @@ class Embeddings(nn.Module):
         self.res_abs = ReZero(hparams.hidden_size, simple=True, fill=0)
         self.dropout = nn.Dropout(hparams.emb_dropout)
 
-    def forward(self, tokens, position, age):
+        # Initialize the partner type embedding
+        self.partner_type = nn.Embedding(3, embedding_size, padding_idx=0)
+
+    def forward(self, tokens, position, age, partner_type=None):
         """"""
         tokens = self.token(tokens)
 
@@ -39,6 +42,11 @@ class Embeddings(nn.Module):
         tokens = self.res_age(tokens, pos)
         pos = self.abspos(position.float().unsqueeze(-1))
         tokens = self.res_abs(tokens, pos)
+
+        if partner_type is not None:
+            partner_type = self.partner_type(partner_type)
+            tokens = tokens + partner_type
+
         return self.dropout(tokens), None
 
 
